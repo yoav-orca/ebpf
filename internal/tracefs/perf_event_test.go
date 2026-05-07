@@ -91,3 +91,49 @@ func TestGetTracefsPath(t *testing.T) {
 	_, err = os.Stat(path)
 	qt.Assert(t, qt.IsNil(err))
 }
+
+func TestSetPath(t *testing.T) {
+	autoPath, err := getTracefsPath()
+	testutils.SkipIfNotSupportedOnOS(t, err)
+	qt.Assert(t, qt.IsNil(err))
+
+	t.Cleanup(func() { _ = SetPath("") })
+
+	// Override with the auto-detected path round-trips.
+	qt.Assert(t, qt.IsNil(SetPath(autoPath)))
+	got, err := getTracefsPath()
+	qt.Assert(t, qt.IsNil(err))
+	qt.Assert(t, qt.Equals(got, autoPath))
+
+	// Clearing reverts to auto-detect.
+	qt.Assert(t, qt.IsNil(SetPath("")))
+	got, err = getTracefsPath()
+	qt.Assert(t, qt.IsNil(err))
+	qt.Assert(t, qt.Equals(got, autoPath))
+}
+
+func TestSetPathRejectsNonTracefs(t *testing.T) {
+	if _, err := getTracefsPath(); err != nil {
+		testutils.SkipIfNotSupportedOnOS(t, err)
+	}
+
+	t.Cleanup(func() { _ = SetPath("") })
+
+	qt.Assert(t, qt.IsNotNil(SetPath("/does/not/exist")))
+	qt.Assert(t, qt.IsNotNil(SetPath(t.TempDir())))
+}
+
+func TestSetPathThenAttach(t *testing.T) {
+	autoPath, err := getTracefsPath()
+	testutils.SkipIfNotSupportedOnOS(t, err)
+	qt.Assert(t, qt.IsNil(err))
+
+	t.Cleanup(func() { _ = SetPath("") })
+	qt.Assert(t, qt.IsNil(SetPath(autoPath)))
+
+	// Reading a known event ID via the tracefs API must continue to work
+	// when the path is set explicitly.
+	eid, err := EventID("syscalls", "sys_enter_mmap")
+	qt.Assert(t, qt.IsNil(err))
+	qt.Assert(t, qt.Not(qt.Equals(eid, 0)))
+}

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/cilium/ebpf/internal"
@@ -109,11 +110,25 @@ func sanitizeTracefsPath(path ...string) (string, error) {
 	return p, nil
 }
 
-// getTracefsPath will return a correct path to the tracefs mount point.
+// tracefsPathOverride holds a path explicitly set via SetPath. When non-nil it
+// takes precedence over auto-detection, allowing callers in containerized
+// environments to point at a non-canonical mount such as /host/sys/kernel/tracing.
+var tracefsPathOverride atomic.Pointer[string]
+
+// getTracefsPath returns the active tracefs mount point: the explicit override
+// when set, otherwise the auto-detected path.
+func getTracefsPath() (string, error) {
+	if p := tracefsPathOverride.Load(); p != nil {
+		return *p, nil
+	}
+	return autoDetectTracefsPath()
+}
+
+// autoDetectTracefsPath probes the canonical tracefs mount points.
 // Since kernel 4.1 tracefs should be mounted by default at /sys/kernel/tracing,
 // but may be also be available at /sys/kernel/debug/tracing if debugfs is mounted.
 // The available tracefs paths will depends on distribution choices.
-var getTracefsPath = sync.OnceValues(func() (string, error) {
+var autoDetectTracefsPath = sync.OnceValues(func() (string, error) {
 	if !platform.IsLinux {
 		return "", fmt.Errorf("tracefs: %w", internal.ErrNotSupportedOnOS)
 	}
@@ -134,6 +149,33 @@ var getTracefsPath = sync.OnceValues(func() (string, error) {
 
 	return "", errors.New("neither debugfs nor tracefs are mounted")
 })
+
+// SetPath overrides the auto-detected tracefs mount point. Pass an empty
+// string to clear a previous override and re-enable auto-detection.
+//
+// The path must be an existing tracefs or debugfs mount; SetPath validates
+// the filesystem type via statfs and returns an error otherwise.
+//
+// Each new probe attach reads the active path; established probes are
+// unaffected by later changes.
+func SetPath(path string) error {
+	if path == "" {
+		tracefsPathOverride.Store(nil)
+		return nil
+	}
+	if !platform.IsLinux {
+		return fmt.Errorf("tracefs: %w", internal.ErrNotSupportedOnOS)
+	}
+	fsType, err := linux.FSType(path)
+	if err != nil {
+		return fmt.Errorf("tracefs: stat %q: %w", path, err)
+	}
+	if fsType != unix.TRACEFS_MAGIC && fsType != unix.DEBUGFS_MAGIC {
+		return fmt.Errorf("tracefs: %q is not a tracefs or debugfs mount", path)
+	}
+	tracefsPathOverride.Store(&path)
+	return nil
+}
 
 // sanitizeIdentifier replaces every invalid character for the tracefs api with an underscore.
 //
