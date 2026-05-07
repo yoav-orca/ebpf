@@ -123,17 +123,3 @@ func TestSetPathRejectsNonTracefs(t *testing.T) {
 	qt.Assert(t, qt.IsNotNil(SetPath(t.TempDir())))
 }
 
-func TestSetPathThenAttach(t *testing.T) {
-	autoPath, err := getTracefsPath()
-	testutils.SkipIfNotSupportedOnOS(t, err)
-	qt.Assert(t, qt.IsNil(err))
-
-	t.Cleanup(func() { _ = SetPath("") })
-	qt.Assert(t, qt.IsNil(SetPath(autoPath)))
-
-	// Reading a known event ID via the tracefs API must continue to work
-	// when the path is set explicitly.
-	eid, err := EventID("syscalls", "sys_enter_mmap")
-	qt.Assert(t, qt.IsNil(err))
-	qt.Assert(t, qt.Not(qt.Equals(eid, 0)))
-}

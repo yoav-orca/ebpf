@@ -151,9 +151,11 @@ var autoDetectTracefsPath = sync.OnceValues(func() (string, error) {
 })
 
 // SetPath overrides the auto-detected tracefs mount point. Pass an empty
-// string to clear a previous override and re-enable auto-detection.
+// string to clear a previous override; subsequent calls use whatever
+// auto-detection produced on its first invocation (auto-detection is not
+// re-run, since its result is cached for the lifetime of the process).
 //
-// The path must be an existing tracefs or debugfs mount; SetPath validates
+// path must be an existing tracefs or debugfs mount; SetPath validates
 // the filesystem type via statfs and returns an error otherwise.
 //
 // Each new probe attach reads the active path; established probes are
@@ -173,6 +175,8 @@ func SetPath(path string) error {
 	if fsType != unix.TRACEFS_MAGIC && fsType != unix.DEBUGFS_MAGIC {
 		return fmt.Errorf("tracefs: %q is not a tracefs or debugfs mount", path)
 	}
+	// path is a parameter, so &path is a fresh address per call; storing
+	// it does not alias subsequent callers' path variables.
 	tracefsPathOverride.Store(&path)
 	return nil
 }

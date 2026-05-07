@@ -9,8 +9,30 @@ import (
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/sys"
+	"github.com/cilium/ebpf/internal/tracefs"
 	"github.com/cilium/ebpf/internal/unix"
 )
+
+// SetTracefsPath overrides the tracefs mount point used when attaching
+// Kprobe, Uprobe, and Tracepoint links. Pass an empty string to clear a
+// previous override; subsequent attaches will use whatever path
+// auto-detection produced on its first call (auto-detection is not
+// re-run).
+//
+// path must be an existing tracefs or debugfs mount; SetTracefsPath
+// validates the filesystem type via statfs and returns an error otherwise.
+//
+// The intended use is containerized environments where tracefs is
+// available at a non-canonical location, such as a /host bind mount, and
+// /sys/kernel/tracing is not directly accessible from inside the
+// container.
+//
+// SetTracefsPath should be called once before any tracefs-backed link is
+// attached. Concurrent calls are safe; established links are unaffected
+// by later changes.
+func SetTracefsPath(path string) error {
+	return tracefs.SetPath(path)
+}
 
 // Type is the kind of link.
 type Type = sys.LinkType
